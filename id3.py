@@ -36,48 +36,38 @@ def entropy(p):
 	entropy = -divided * math.log((divided),2) - ((divided2)* math.log((divided2),2))
 	return entropy
 
-def gain(data):
-	column = data[-1]
-	entropy_total = entropy(column)
-
-	total_length = len(data[0])	
-	pos_and_neg = partitiondata(data)
-
-	negative_values = pos_and_neg[0]
-	positive_values = pos_and_neg[1]
-
-	if len(negative_values) != 0:
-		negative_entropy = entropy(negative_values)
-	else: 
-		infogain = 0
-		return infogain
-	if len(positive_values) != 0:	
-		positive_entropy = entropy(positive_values)
-	else:
-		infogain = 0
-		return infogain
-
-	infogain = entropy_total - (((len(positive_values)+0.0)/total_length)*positive_entropy) - (((len(negative_values)+0.0)/total_length)*negative_entropy)
-	return infogain
-
-
 # Compute information gain for a particular split, given the counts
 # py_pxi : number of occurences of y=1 with x_i=1 for all i=1 to n
 # pxi : number of occurrences of x_i=1
 # py : number of ocurrences of y=1
 # total : total length of the data
 def infogain(py_pxi, pxi, py, total):
-	"total_entropy - (pos_sample/all_samples) * pos_sample_entropy - (neg_sample/all_samples) * neg_sample_entropy"
-	# >>>> YOUR CODE GOES HERE <<<<
-	# For now, always return "0":
-	return 0;
+	column = py
+	entropy_total = entropy(column)
+	total_length = total
+	negative_values = py_pxi
+	positive_values = pxi
+
+	if len(negative_values) != 0:
+		negative_entropy = entropy(negative_values)
+	else: 
+		infogain = 0.0
+		return infogain
+	if len(positive_values) != 0:	
+		positive_entropy = entropy(positive_values)
+	else:
+		infogain = 0.0
+		return infogain
+	
+	infogain = entropy_total - (((len(positive_values)+0.0)/total_length)*positive_entropy) - (((len(negative_values)+0.0)/total_length)*negative_entropy)
+	return infogain		
 
 # OTHER SUGGESTED HELPER FUNCTIONS:
 # - collect counts for each variable value with each class label
 # - find the best variable to split on, according to mutual information
 # - partition data based on a given variable
 
-# Get a particular colum from total dataset
+# Get a particular column from total dataset
 def get_column(data, i):
 	return [row[i] for row in data]
 
@@ -144,16 +134,14 @@ def deleteColumn(data, column):
 
 def deleteVar(varnames, column):
 	print ("COLUMN", column[1])
-	new_vars = varnames.pop(column[1])
+	varnames.pop(column[1])
 	return varnames
 
 def branch_data(data, column):
 	left_branch = []
 	right_branch = []
-	i = 0
 
 	for row in data:
-		newRow = []
 		temp = row
 		if row[column] == 0:
 			temp.pop(column)
@@ -162,7 +150,6 @@ def branch_data(data, column):
 			temp.pop(column)
 			right_branch.append(temp)
 	return(left_branch, right_branch)
-
 
 # Load data from a file
 def read_data(filename):
@@ -185,7 +172,11 @@ def print_model(root, modelfile):
 # Build tree in a top-down manner, selecting splits until we hit a
 # pure leaf or all splits look bad.
 def build_tree(data, varnames):
+	# Make copies of the data since lists are mutable
 	test = varnames[:]
+	varnames = varnames[:]
+	data = data[:]
+
 	#return a guess by counting whether there are more 0's or 1's in the 
 	best_guess = majority_value(get_column(data,len(data[0])-1))
 	unambiguous = count_values(get_column(data,len(data[0])-1))
@@ -207,27 +198,35 @@ def build_tree(data, varnames):
 		returned_entropy = []
 		i = 0
 		for item in data:
-			columns = []
-			columns.append(get_column(data,i))
-			columns.append(get_column(data,len(data[0])-1))
-			returned_entropy.append(gain(columns))
-			i += 1
-			print len(varnames), i
-			if i == len(varnames)-1:
-				break
+			for digit in item:
+				if i == len(varnames)-1:
+					break
+				columns = []
+				columns.append(get_column(data,i))
+				columns.append(get_column(data,len(data[0])-1))
+				pos_and_neg = partitiondata(columns)
+				negative_values = pos_and_neg[0]
+				positive_values = pos_and_neg[1]
+				column = data[-1]
+				returned_entropy.append(infogain(positive_values, negative_values, column, total_length))
+				print len(varnames), i
+				i += 1
 
 		# Once we have a list of gains, get the highest one
 		best_value = split_data(returned_entropy)
+		print varnames
 		new_varnames = deleteVar(varnames, best_value)
+		print "entropy",returned_entropy
+
 		print best_value
-		print new_varnames
+
 		branch = branch_data(data, best_value[1])
+		
 		left = build_tree(branch[0], new_varnames)
 		right = build_tree(branch[1], new_varnames)
 
 		# Remove the column that we have selected so it won't show up again later
 		#new_data =  deleteColumn(data, best_value)
-
 		return node.Split(test, best_value[1], left, right)
 
 
