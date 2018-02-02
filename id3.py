@@ -7,9 +7,9 @@
 #
 import sys
 import re
+import math
 # Node class for the decision tree
 import node
-import math
 
 train=None
 varnames=None
@@ -20,47 +20,47 @@ root=None
 # Helper function computes entropy of Bernoulli distribution with
 # parameter p
 def entropy(p):
-	total_length = len(p)
-
-	one_values = 0
-	for digit in p:		
-		if digit == 1:
-			one_values += 1
-
-	divided = (one_values+0.0)/total_length
-	divided2 = ((total_length - one_values) + 0.0)/total_length
-	if divided <= 0 or divided2 <= 0:
+	divided = p
+	if divided <= 0 or 1-divided <= 0:
 		return 0
-	if divided == divided2:
+	if divided == 1-divided:
 		return 1
-	entropy = -divided * math.log((divided),2) - ((divided2)* math.log((divided2),2))
-	return entropy
+	if divided > 0 and 1-divided > 0:
+		entropy = -divided * math.log((divided),2) - (1-divided)* math.log((1-divided),2)
+		return entropy
 
 # Compute information gain for a particular split, given the counts
 # py_pxi : number of occurences of y=1 with x_i=1 for all i=1 to n
 # pxi : number of occurrences of x_i=1
 # py : number of ocurrences of y=1
 # total : total length of the data
-def infogain(py_pxi, pxi, py, total):
-	column = py
-	entropy_total = entropy(column)
-	total_length = total
-	negative_values = py_pxi
-	positive_values = pxi
+def infogain(py_pxi, pxi, py, total):	
 
-	if len(negative_values) != 0:
-		negative_entropy = entropy(negative_values)
-	else: 
-		infogain = 0.0
-		return infogain
-	if len(positive_values) != 0:	
-		positive_entropy = entropy(positive_values)
+	if py_pxi == 0 or pxi == 0:
+		positive_entropy = 0
 	else:
-		infogain = 0.0
-		return infogain
+		pos = (py_pxi+0.0)/pxi
+		positive_entropy = entropy(pos)
+	if py-py_pxi == 0:
+		negative_entropy = 0
+	else:
+		neg = ((py-py_pxi)+0.0)/(total-pxi)
+		negative_entropy = entropy(neg)
 	
-	infogain = entropy_total - (((len(positive_values)+0.0)/total_length)*positive_entropy) - (((len(negative_values)+0.0)/total_length)*negative_entropy)
+	total_entropy = (py+0.0)/total
+	
+	entropy_total = entropy(total_entropy)
+	
+	infogain = entropy_total - (((pxi+0.0)/total)*positive_entropy) - ((((total-pxi)+0.0)/total)*negative_entropy)
 	return infogain		
+
+def get_ones(data):
+	one_values = 0
+	for digit in data:		
+		if digit == 1:
+			one_values += 1
+
+	return one_values
 
 # OTHER SUGGESTED HELPER FUNCTIONS:
 # - collect counts for each variable value with each class label
@@ -72,7 +72,7 @@ def get_column(data, i):
 	return [row[i] for row in data]
 
 # Split the "Class" data into two arrays, depending on other attribute values
-def partitiondata(data):
+def partition_data(data):
 	data0 = []
 	data1 = []
 	index = 0
@@ -85,6 +85,7 @@ def partitiondata(data):
 		elif item == 1:
 			data1.append(row2[index])
 		index += 1	
+
 	return (data0,data1)
 
 # Takes in the list of calculated entropies and returns the highest one
@@ -99,19 +100,6 @@ def split_data(data):
 		i += 1
 	return best_value,best_value_index
 
-def majority_value(data):
-	data0 = 0
-	data1 = 0
-	for digit in data:
-		if digit == 1:
-			data1 = +1
-		else:
-			data0 += 1
-	if data0 > data1:
-		return 0
-	else:
-		return 1
-
 def count_values(data):
 	data0 = 0
 	data1 = 0
@@ -122,21 +110,6 @@ def count_values(data):
 			data0 += 1
 	return(data0, data1)
 
-def deleteColumn(data, column):
-	indices = []
-	i = 0
-	for i in range(len(data[0])):
-		if i != column[1]:
-			indices.append(i)
-		i += 1	
-	copyArray = [ [row[ci] for ci in indices] for row in data ]
-	return copyArray
-
-def deleteVar(varnames, column):
-	print ("COLUMN", column[1])
-	varnames.pop(column[1])
-	return varnames
-
 def branch_data(data, column):
 	left_branch = []
 	right_branch = []
@@ -144,10 +117,8 @@ def branch_data(data, column):
 	for row in data:
 		temp = row
 		if row[column] == 0:
-			temp.pop(column)
 			left_branch.append(temp)
 		else:
-			temp.pop(column)
 			right_branch.append(temp)
 	return(left_branch, right_branch)
 
@@ -172,62 +143,76 @@ def print_model(root, modelfile):
 # Build tree in a top-down manner, selecting splits until we hit a
 # pure leaf or all splits look bad.
 def build_tree(data, varnames):
-	# Make copies of the data since lists are mutable
-	test = varnames[:]
-	varnames = varnames[:]
-	data = data[:]
 
-	#return a guess by counting whether there are more 0's or 1's in the 
-	best_guess = majority_value(get_column(data,len(data[0])-1))
-	unambiguous = count_values(get_column(data,len(data[0])-1))
 
-	# If the data is unambiguous, you can stop right away and make a leaf
-	if (unambiguous[0] == len(data)) or (unambiguous[1] == len(data)):
-		if unambiguous[0] == len(data):
-			return node.Leaf(test, 0)
-		else:
-			return node.Leaf(test, 1)
+	# Get class column length and count values of it
+	class_length = get_column(data,len(varnames)-1)
+	class_pos_neg = count_values(class_length)
+	
+	# Make leaf if only 0's
+	if class_pos_neg[0]==len(class_length):
+		return node.Leaf(varnames,0)
+	# Make leaf if only 1's
+	elif class_pos_neg[1]==len(class_length):
+		return node.Leaf(varnames,1)
 
-	# If there are no more features left besides the "Class", you can stop as well and make a leaf
-	elif len(varnames)<=1:
-		return node.Leaf(test, best_guess)
-
-	# Otherwise go through the data, calculate the information gain and branch
 	else:
-		total_length = len(data)
+		# Get column of i and class column, then compute gain and return it
 		returned_entropy = []
-		i = 0
-		for item in data:
-			for digit in item:
-				if i == len(varnames)-1:
-					break
-				columns = []
-				columns.append(get_column(data,i))
-				columns.append(get_column(data,len(data[0])-1))
-				pos_and_neg = partitiondata(columns)
-				negative_values = pos_and_neg[0]
-				positive_values = pos_and_neg[1]
-				column = data[-1]
-				returned_entropy.append(infogain(positive_values, negative_values, column, total_length))
-				print len(varnames), i
-				i += 1
+		for i in range(0,len(varnames)-1):
+			columns = []
+			columns.append(get_column(data,i))
+			columns.append(get_column(data,len(data[0])-1))
+			pos_and_neg = partition_data(columns)
+			positive_values = pos_and_neg[1]
+			class_values = columns[-1]
+			returned_entropy.append(infogain(get_ones(positive_values),get_ones(columns[0]), get_ones(class_values), len(columns[0])))
 
 		# Once we have a list of gains, get the highest one
 		best_value = split_data(returned_entropy)
-		print varnames
-		new_varnames = deleteVar(varnames, best_value)
-		print "entropy",returned_entropy
-
-		print best_value
-
+		# Branch the data into left and right, depending on higehst gain value in array
 		branch = branch_data(data, best_value[1])
-		
-		left = build_tree(branch[0], new_varnames)
-		right = build_tree(branch[1], new_varnames)
 
-		# Remove the column that we have selected so it won't show up again later
-		#new_data =  deleteColumn(data, best_value)
-		return node.Split(test, best_value[1], left, right)
+		# If the gain is exactly 0
+		if best_value[0] == 0.0:
+			if class_pos_neg[0] > class_pos_neg[1]:
+				return node.Leaf(varnames,0)
+			elif class_pos_neg[0] < class_pos_neg[1]:
+				return node.Leaf(varnames,1)
+
+		left = None
+		right = None
+		# There is no information gain progress
+		if best_value[0] <= 0.0:
+
+			# Get the columns of the branched data and count values in it
+			check_branch_negatives = count_values(get_column(branch[0], best_value[1]))
+			check_branch_positives = count_values(get_column(branch[1], best_value[1]))
+			# Get length of both original branches
+			length_neg = len(branch[0])
+			length_pos = len(branch[1])
+
+			# Make sure that neither the left, nor the right branch values are equal in length to the whole branch
+			# That is, the tree needs to stop branching if one of the two branches is empty
+			if (check_branch_negatives[0] == length_neg or check_branch_negatives[1] == length_neg):
+				return node.Leaf(varnames, 1)
+			elif (check_branch_negatives[0] < length_neg or check_branch_negatives[1] < length_neg):
+				left = build_tree(branch[0], varnames)
+
+			if (check_branch_positives[0] == length_pos or check_branch_positives[1] == length_pos):
+				return node.Leaf(varnames, 1)
+			elif (check_branch_positives[0] < length_pos or check_branch_positives[1] < length_pos):
+				right = build_tree(branch[1], varnames)
+
+			return node.Split(varnames, best_value[1], left, right)
+
+		# The gain is higher than 0, everything is good and we can keep on branching 
+		else:
+			# We split the tree and recursively go through both new branches
+			left = build_tree(branch[0], varnames)
+			right = build_tree(branch[1], varnames)
+		
+			return node.Split(varnames, best_value[1], left, right)
 
 
 # "varnames" is a list of names, one for each variable
@@ -243,7 +228,7 @@ def loadAndTrain(trainS,testS,modelS):
 	(train, varnames) = read_data(trainS)
 	(test, testvarnames) = read_data(testS)
 	modelfile = modelS
-	
+
 	# build_tree is the main function you'll have to implement, along with
 	# any helper functions needed.  It should return the root node of the
 	# decision tree.
